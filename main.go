@@ -14,6 +14,7 @@ func main() {
 	cmdJoin := cmd.MakeJoin()
 	cmdApps := cmd.MakeApps()
 	cmdUpdate := cmd.MakeUpdate()
+	cmdInit := cmd.MakeInit()
 
 	printk3supASCIIArt := cmd.PrintK3supASCIIArt
 
@@ -30,6 +31,7 @@ func main() {
 	rootCmd.AddCommand(cmdJoin)
 	rootCmd.AddCommand(cmdApps)
 	rootCmd.AddCommand(cmdUpdate)
+	rootCmd.AddCommand(cmdInit)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
