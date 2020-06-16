@@ -51,7 +51,8 @@ Provide the --local-path flag with --merge if a kubeconfig already exists in som
 
 	command.Flags().Bool("local", false, "Perform a local install without using ssh")
 	command.Flags().Bool("cluster", false, "Form a dqlite cluster")
-
+	command.Flags().String("install-k3s-shell", "https://get.k3s.io", "install k3s shell url")
+	command.Flags().String("k3s-env", "INSTALL_K3S_SKIP_DOWNLOAD=true", "k3s Environment variables")
 	command.RunE = func(command *cobra.Command, args []string) error {
 
 		fmt.Printf("Running: k3sup install\n")
@@ -91,14 +92,18 @@ Provide the --local-path flag with --merge if a kubeconfig already exists in som
 		}
 
 		installk3sExec := fmt.Sprintf("INSTALL_K3S_EXEC='server %s --tls-san %s %s'", clusterStr, ip, strings.TrimSpace(k3sExtraArgs))
-
-		installK3scommand := fmt.Sprintf("curl -sLS https://get.k3s.io | %s INSTALL_K3S_VERSION='%s' sh -\n", installk3sExec, k3sVersion)
+		k3sInstallShell, _ := command.Flags().GetString("install-k3s-shell")
+		k3sEnv,_:=command.Flags().GetString("k3s-env")
+		installK3scommand := fmt.Sprintf("curl -sLS %s | %s INSTALL_K3S_VERSION='%s' %s sh -\n", k3sInstallShell, installk3sExec, k3sVersion, k3sEnv)
 		getConfigcommand := fmt.Sprintf(sudoPrefix + "cat /etc/rancher/k3s/k3s.yaml\n")
 		merge, _ := command.Flags().GetBool("merge")
 		context, _ := command.Flags().GetString("context")
 
 		if local {
 			operator := operator.ExecOperator{}
+
+			fmt.Println("export INSTALL_K3S_SKIP_DOWNLOAD=true")
+			_, _ = operator.Execute("export INSTALL_K3S_SKIP_DOWNLOAD=true")
 
 			fmt.Printf("Executing: %s\n", installK3scommand)
 
@@ -157,7 +162,8 @@ Provide the --local-path flag with --merge if a kubeconfig already exists in som
 		defer operator.Close()
 
 		if !skipInstall {
-
+			fmt.Println("export INSTALL_K3S_SKIP_DOWNLOAD=true")
+			_, _ = operator.Execute("export INSTALL_K3S_SKIP_DOWNLOAD=true")
 			fmt.Printf("ssh: %s\n", installK3scommand)
 			res, err := operator.Execute(installK3scommand)
 
@@ -315,7 +321,7 @@ func loadPublickey(path string) (ssh.AuthMethod, func() error, error) {
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		if err.Error() != "ssh: cannot decode encrypted private keys" {
-			return nil, noopCloseFunc, err
+			return nil, noopCloseFunc, fmt.Errorf("unable to parse private key: %s", err.Error())
 		}
 
 		agent, close := sshAgent(path + ".pub")
@@ -326,12 +332,21 @@ func loadPublickey(path string) (ssh.AuthMethod, func() error, error) {
 		defer close()
 
 		fmt.Printf("Enter passphrase for '%s': ", path)
-		bytePassword, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+		STDIN := int(os.Stdin.Fd())
+		bytePassword, _ := terminal.ReadPassword(STDIN)
+
+		// Ignore any error from reading stdin to retain existing behaviour for unit test in
+		// install_test.go
+
+		// if err != nil {
+		// 	return nil, noopCloseFunc, fmt.Errorf("reading password from stdin failed: %s", err.Error())
+		// }
+
 		fmt.Println()
 
 		signer, err = ssh.ParsePrivateKeyWithPassphrase(key, bytePassword)
 		if err != nil {
-			return nil, noopCloseFunc, err
+			return nil, noopCloseFunc, fmt.Errorf("parse private key with passphrase failed: %s", err)
 		}
 	}
 
